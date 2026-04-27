@@ -1190,6 +1190,46 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           ]
         }
 
+        if (part.type === "text") {
+          const urls = [...part.text.matchAll(/https?:\/\/[^\s<>"{}|\\^`[\]]+/g)]
+            .map((m) => m[0].replace(/[.,;:!?)]+$/, ""))
+            .filter((url, i, arr) => arr.indexOf(url) === i)
+            .slice(0, 3)
+
+          if (urls.length > 0) {
+            const { webfetch } = yield* registry.named()
+            const pieces: Draft<MessageV2.Part>[] = [{ ...part, messageID: info.id, sessionID: input.sessionID }]
+            const controller = new AbortController()
+            for (const url of urls) {
+              const exit = yield* webfetch
+                .execute(
+                  { url, format: "markdown" as const },
+                  {
+                    sessionID: input.sessionID,
+                    abort: controller.signal,
+                    agent: input.agent ?? "primary",
+                    messageID: info.id,
+                    extra: {},
+                    messages: [],
+                    metadata: () => Effect.void,
+                    ask: () => Effect.void,
+                  },
+                )
+                .pipe(Effect.exit)
+              if (Exit.isSuccess(exit)) {
+                pieces.push({
+                  messageID: info.id,
+                  sessionID: input.sessionID,
+                  type: "text",
+                  synthetic: true,
+                  text: `<url url="${url}">\n${exit.value.output}\n</url>`,
+                })
+              }
+            }
+            return pieces
+          }
+        }
+
         return [{ ...part, messageID: info.id, sessionID: input.sessionID }]
       })
 

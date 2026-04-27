@@ -53,18 +53,20 @@ const log = Log.create({ service: "tool.registry" })
 
 type TaskDef = Tool.InferDef<typeof TaskTool>
 type ReadDef = Tool.InferDef<typeof ReadTool>
+type WebFetchDef = Tool.InferDef<typeof WebFetchTool>
 
 type State = {
   custom: Tool.Def[]
   builtin: Tool.Def[]
   task: TaskDef
   read: ReadDef
+  webfetch: WebFetchDef
 }
 
 export interface Interface {
   readonly ids: () => Effect.Effect<string[]>
   readonly all: () => Effect.Effect<Tool.Def[]>
-  readonly named: () => Effect.Effect<{ task: TaskDef; read: ReadDef }>
+  readonly named: () => Effect.Effect<{ task: TaskDef; read: ReadDef; webfetch: WebFetchDef }>
   readonly tools: (model: { providerID: ProviderID; modelID: ModelID; agent: Agent.Info }) => Effect.Effect<Tool.Def[]>
 }
 
@@ -211,6 +213,7 @@ export const layer: Layer.Layer<
 
         return {
           custom,
+          webfetch: tool.fetch,
           builtin: [
             tool.invalid,
             ...(questionEnabled ? [tool.question] : []),
@@ -323,7 +326,7 @@ export const layer: Layer.Layer<
 
     const named: Interface["named"] = Effect.fn("ToolRegistry.named")(function* () {
       const s = yield* InstanceState.get(state)
-      return { task: s.task, read: s.read }
+      return { task: s.task, read: s.read, webfetch: s.webfetch }
     })
 
     return Service.of({ ids, all, named, tools })
