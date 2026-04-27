@@ -400,6 +400,70 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
           },
         },
       }),
+    exo: Effect.fnUntraced(function* (input: Info) {
+      const cfg = (yield* dep.config()).provider?.["exo"]
+      const env = yield* dep.env()
+      const baseURL = String(cfg?.options?.["baseURL"] ?? env["EXO_API_URL"] ?? EXO_DEFAULT_URL)
+
+      const reachable = yield* Effect.promise(async () => {
+        try {
+          const res = await fetch(`${baseURL}/models`, { signal: AbortSignal.timeout(500) })
+          return res.ok
+        } catch {
+          return false
+        }
+      })
+
+      if (!reachable && Object.keys(input.models).length === 0) return { autoload: false }
+
+      return {
+        autoload: true,
+        options: { baseURL, apiKey: "exo" },
+        async discoverModels(): Promise<Record<string, Model>> {
+          try {
+            const res = await fetch(`${baseURL}/models`, { signal: AbortSignal.timeout(5000) })
+            if (!res.ok) return {}
+            const data = (await res.json()) as { data?: Array<Record<string, any>> }
+            const models: Record<string, Model> = {}
+            for (const m of data.data ?? []) {
+              if (!m.id || typeof m.id !== "string") continue
+              const caps: string[] = Array.isArray(m.capabilities) ? m.capabilities : []
+              const supportsVision = caps.includes("vision") || caps.includes("image")
+              models[m.id] = {
+                id: ModelID.make(m.id),
+                providerID: ProviderID.make("exo"),
+                name: typeof m.name === "string" && m.name ? m.name : m.id,
+                family: typeof m.family === "string" ? m.family : "",
+                api: { id: m.id, url: baseURL, npm: "@ai-sdk/openai-compatible" },
+                status: "active",
+                options: {},
+                headers: {},
+                cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
+                limit: {
+                  context: typeof m.context_length === "number" ? m.context_length : 8192,
+                  output: 4096,
+                },
+                capabilities: {
+                  temperature: true,
+                  reasoning: false,
+                  attachment: supportsVision,
+                  toolcall: true,
+                  input: { text: true, audio: false, image: supportsVision, video: false, pdf: false },
+                  output: { text: true, audio: false, image: false, video: false, pdf: false },
+                  interleaved: false,
+                },
+                release_date: "",
+                variants: {},
+              }
+            }
+            return models
+          } catch (e) {
+            log.warn("exo model discovery failed", { error: e })
+            return {}
+          }
+        },
+      }
+    }),
     openrouter: () =>
       Effect.succeed({
         autoload: false,
@@ -1018,6 +1082,19 @@ function fromModelsDevModel(provider: ModelsDev.Provider, model: ModelsDev.Model
   }
 }
 
+const EXO_DEFAULT_URL = "http://localhost:52415/v1"
+
+function exoProvider(): Info {
+  return {
+    id: ProviderID.make("exo"),
+    name: "Exo Cluster",
+    source: "custom",
+    env: ["EXO_API_URL"],
+    options: {},
+    models: {},
+  }
+}
+
 export function fromModelsDevProvider(provider: ModelsDev.Provider): Info {
   const models: Record<string, Model> = {}
   for (const [key, model] of Object.entries(provider.models)) {
@@ -1072,6 +1149,7 @@ const layer: Layer.Layer<
         const cfg = yield* config.get()
         const modelsDev = yield* Effect.promise(() => ModelsDev.get())
         const database = mapValues(modelsDev, fromModelsDevProvider)
+        if (!database["exo"]) database["exo"] = exoProvider()
 
         const providers: Record<ProviderID, Info> = {} as Record<ProviderID, Info>
         const languages = new Map<string, LanguageModelV3>()
@@ -1284,18 +1362,19 @@ const layer: Layer.Layer<
           mergeProvider(providerID, partial)
         }
 
-        const gitlab = ProviderID.make("gitlab")
-        if (discoveryLoaders[gitlab] && providers[gitlab] && isProviderAllowed(gitlab)) {
+        for (const [providerIDStr, loader] of Object.entries(discoveryLoaders)) {
+          const providerID = ProviderID.make(providerIDStr)
+          if (!providers[providerID] || !isProviderAllowed(providerID)) continue
           yield* Effect.promise(async () => {
             try {
-              const discovered = await discoveryLoaders[gitlab]()
+              const discovered = await loader()
               for (const [modelID, model] of Object.entries(discovered)) {
-                if (!providers[gitlab].models[modelID]) {
-                  providers[gitlab].models[modelID] = model
+                if (!providers[providerID].models[modelID]) {
+                  providers[providerID].models[modelID] = model
                 }
               }
             } catch (e) {
-              log.warn("state discovery error", { id: "gitlab", error: e })
+              log.warn("state discovery error", { id: providerIDStr, error: e })
             }
           })
         }
