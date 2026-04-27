@@ -7,6 +7,7 @@ import { GlobTool } from "./glob"
 import { GrepTool } from "./grep"
 import { ReadTool } from "./read"
 import { TaskTool } from "./task"
+import { ParallelTaskTool } from "./parallel-task"
 import { TodoWriteTool } from "./todo"
 import { WebFetchTool } from "./webfetch"
 import { WriteTool } from "./write"
@@ -115,6 +116,7 @@ export const layer: Layer.Layer<
     const greptool = yield* GrepTool
     const patchtool = yield* ApplyPatchTool
     const skilltool = yield* SkillTool
+    const paralleltask = yield* ParallelTaskTool
     const agent = yield* Agent.Service
 
     const state = yield* InstanceState.make<State>(
@@ -201,6 +203,7 @@ export const layer: Layer.Layer<
           code: Tool.init(codesearch),
           skill: Tool.init(skilltool),
           patch: Tool.init(patchtool),
+          paralleltask: Tool.init(paralleltask),
           question: Tool.init(question),
           lsp: Tool.init(lsptool),
           plan: Tool.init(plan),
@@ -218,6 +221,7 @@ export const layer: Layer.Layer<
             tool.edit,
             tool.write,
             tool.task,
+            tool.paralleltask,
             tool.fetch,
             tool.todo,
             tool.search,

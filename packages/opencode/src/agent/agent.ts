@@ -45,6 +45,8 @@ export const Info = Schema.Struct({
   prompt: Schema.optional(Schema.String),
   options: Schema.Record(Schema.String, Schema.Unknown),
   steps: Schema.optional(Schema.Number),
+  parallel: Schema.optional(Schema.Boolean),
+  stateless: Schema.optional(Schema.Boolean),
 })
   .annotate({ identifier: "Agent" })
   .pipe(withStatics((s) => ({ zod: zod(s) })))
@@ -149,6 +151,7 @@ export const layer = Layer.effect(
             permission: Permission.merge(
               defaults,
               Permission.fromConfig({
+                todoread: "deny",
                 todowrite: "deny",
               }),
               user,
@@ -257,6 +260,8 @@ export const layer = Layer.effect(
           item.hidden = value.hidden ?? item.hidden
           item.name = value.name ?? item.name
           item.steps = value.steps ?? item.steps
+          item.parallel = value.parallel ?? item.parallel
+          item.stateless = value.stateless ?? item.stateless
           item.options = mergeDeep(item.options, value.options ?? {})
           item.permission = Permission.merge(item.permission, Permission.fromConfig(value.permission ?? {}))
         }

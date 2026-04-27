@@ -1386,7 +1386,7 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
           )
         }}
       </For>
-      <Show when={props.parts.some((x) => x.type === "tool" && x.tool === "task")}>
+      <Show when={props.parts.some((x) => x.type === "tool" && (x.tool === "task" || x.tool === "parallel_task"))}>
         <box paddingTop={1} paddingLeft={3}>
           <text fg={theme.text}>
             {keybind.print("session_child_first")}
@@ -1577,7 +1577,7 @@ function ToolPart(props: { last: boolean; part: ToolPart; message: AssistantMess
         <Match when={props.part.tool === "edit"}>
           <Edit {...toolprops} />
         </Match>
-        <Match when={props.part.tool === "task"}>
+        <Match when={props.part.tool === "task" || props.part.tool === "parallel_task"}>
           <Task {...toolprops} />
         </Match>
         <Match when={props.part.tool === "apply_patch"}>
@@ -1991,7 +1991,15 @@ function Task(props: ToolProps<typeof TaskTool>) {
 
   const isRunning = createMemo(() => props.part.state.status === "running")
 
+  // Use embedded stats from metadata (populated by executeTask after subagent completes)
+  // as primary source. Fall back to synced session data for live running display.
+  const toolCount = createMemo(() => {
+    if (props.metadata.toolCalls !== undefined) return props.metadata.toolCalls as number
+    return tools().length
+  })
+
   const duration = createMemo(() => {
+    if (props.metadata.durationMs !== undefined) return props.metadata.durationMs as number
     const first = messages().find((x) => x.role === "user")?.time.created
     const assistant = messages().findLast((x) => x.role === "assistant")?.time.completed
     if (!first || !assistant) return 0
@@ -2012,7 +2020,7 @@ function Task(props: ToolProps<typeof TaskTool>) {
     }
 
     if (props.part.state.status === "completed") {
-      content.push(`└ ${tools().length} toolcalls · ${Locale.duration(duration())}`)
+      content.push(`└ ${toolCount()} toolcalls · ${Locale.duration(duration())}`)
     }
 
     return content.join("\n")
