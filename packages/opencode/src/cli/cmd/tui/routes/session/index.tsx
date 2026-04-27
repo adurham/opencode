@@ -1993,13 +1993,16 @@ function Task(props: ToolProps<typeof TaskTool>) {
 
   // Use embedded stats from metadata (populated by executeTask after subagent completes)
   // as primary source. Fall back to synced session data for live running display.
+  const meta = createMemo(() => props.metadata as { toolCalls?: number; durationMs?: number })
   const toolCount = createMemo(() => {
-    if (props.metadata.toolCalls !== undefined) return props.metadata.toolCalls as number
+    const v = meta().toolCalls
+    if (v !== undefined) return v
     return tools().length
   })
 
   const duration = createMemo(() => {
-    if (props.metadata.durationMs !== undefined) return props.metadata.durationMs as number
+    const v = meta().durationMs
+    if (v !== undefined) return v
     const first = messages().find((x) => x.role === "user")?.time.created
     const assistant = messages().findLast((x) => x.role === "assistant")?.time.completed
     if (!first || !assistant) return 0

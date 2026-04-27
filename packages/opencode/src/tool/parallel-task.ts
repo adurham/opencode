@@ -17,12 +17,9 @@ const TaskItem = Schema.Struct({
 })
 
 const Parameters = Schema.Struct({
-  tasks: Schema.Array(TaskItem)
-    .annotate({
-      description:
-        "Array of tasks to run in parallel. Each task runs on its own agent concurrently. Minimum 2 tasks.",
-    })
-    .pipe(Schema.minItems(2)),
+  tasks: Schema.Array(TaskItem).annotate({
+    description: "Array of tasks to run in parallel. Each task runs on its own agent concurrently. Minimum 2 tasks.",
+  }),
 })
 
 export const ParallelTaskTool = Tool.define(
@@ -77,6 +74,7 @@ export const ParallelTaskTool = Tool.define(
 
       const msg = yield* Effect.sync(() => MessageV2.get({ sessionID: ctx.sessionID, messageID: ctx.messageID }))
       if (msg.info.role !== "assistant") return yield* Effect.fail(new Error("Not an assistant message"))
+      const baseModel = { modelID: msg.info.modelID, providerID: msg.info.providerID }
 
       const results = yield* Effect.forEach(
         params.tasks,
@@ -91,10 +89,7 @@ export const ParallelTaskTool = Tool.define(
           const canTask = next.permission.some((rule) => rule.permission === "task")
           const canTodo = next.permission.some((rule) => rule.permission === "todowrite")
 
-          const model = next.model ?? {
-            modelID: msg.info.modelID,
-            providerID: msg.info.providerID,
-          }
+          const model = next.model ?? baseModel
 
           const nextSession = yield* sessions.create({
             parentID: ctx.sessionID,
