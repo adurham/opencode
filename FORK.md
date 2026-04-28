@@ -40,10 +40,39 @@ Registers exo ([`exo-explore/exo`](https://github.com/exo-explore/exo), distribu
 - Reachability: 500ms timeout probe of `GET /models` at load time — if the cluster is unreachable AND no models are pre-configured, autoload is disabled (so it stays out of the way when exo isn't running)
 - Model discovery: when reachable, fetches `GET /models` and converts each entry into an opencode `Model` with sensible defaults (8192 context, 4096 output, vision capability inferred from `capabilities` array)
 - Cost is set to zero across the board (assumed self-hosted)
+- Default request timeout is 10 minutes (`options.timeout: 600_000`) — local cluster generation is slower and more bursty than frontier APIs. Override via `provider.exo.options.timeout` in config or set to `false` to disable.
 
 This commit also includes a small generalization: the gitlab-specific discovery-loader trigger in the provider layer was replaced with a loop over all registered `discoveryLoaders`, so any provider with a `discoverModels()` returns picks up the same wiring. That refactor is independent of the exo provider itself and is a clear standalone improvement.
 
-Originating commit: `f7c0e71dd`.
+Originating commit: `f7c0e71dd`. Tuning follow-up: `<pending>`.
+
+#### Per-model config overrides
+
+For any provider that returns a `discoverModels()` (currently exo, gitlab), config entries under `provider.<id>.models.<modelID>` are now **layered on top of** the discovered model rather than replacing it. The discovered base supplies `api.url`, `api.id`, dynamic `limit.context`, etc.; user-set fields in config take precedence per-field.
+
+Useful for tagging local models with their actual capabilities without redefining everything:
+
+```jsonc
+{
+  "provider": {
+    "exo": {
+      "options": { "timeout": 1200000 },
+      "models": {
+        "deepseek-r1": {
+          "reasoning": true,
+          "interleaved": { "field": "reasoning_content" }
+        },
+        "qwen2.5-7b": {
+          "tool_call": false,
+          "limit": { "context": 32768, "output": 8192 }
+        }
+      }
+    }
+  }
+}
+```
+
+Implementation: `applyConfigOverrides()` in `provider/provider.ts`, called from the discovery loop. Field mapping mirrors the main config-model parser.
 
 ## Untracked / WIP
 

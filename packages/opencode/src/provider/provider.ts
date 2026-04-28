@@ -418,7 +418,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
 
       return {
         autoload: true,
-        options: { baseURL, apiKey: "exo" },
+        options: { baseURL, apiKey: "exo", timeout: 600_000 },
         async discoverModels(): Promise<Record<string, Model>> {
           try {
             const res = await fetch(`${baseURL}/models`, { signal: AbortSignal.timeout(5000) })
@@ -1095,6 +1095,65 @@ function exoProvider(): Info {
   }
 }
 
+// Overlay user-defined config fields onto a model returned by a provider's
+// discoverModels(). Only fields the user explicitly set in config win; the
+// rest of the discovered model (api url, dynamic context length, etc.)
+// passes through untouched. Mirrors the field mapping used by the main
+// config-model parser so behavior is consistent.
+function applyConfigOverrides(base: Model, raw: any): Model {
+  const next = structuredClone(base) as Model
+  if (raw.name !== undefined) next.name = raw.name
+  if (raw.family !== undefined) next.family = raw.family
+  if (raw.release_date !== undefined) next.release_date = raw.release_date
+  if (raw.status !== undefined) next.status = raw.status
+  if (raw.attachment !== undefined) next.capabilities.attachment = raw.attachment
+  if (raw.reasoning !== undefined) next.capabilities.reasoning = raw.reasoning
+  if (raw.temperature !== undefined) next.capabilities.temperature = raw.temperature
+  if (raw.tool_call !== undefined) next.capabilities.toolcall = raw.tool_call
+  if (raw.interleaved !== undefined) next.capabilities.interleaved = raw.interleaved
+  if (raw.modalities?.input) {
+    next.capabilities.input = {
+      text: raw.modalities.input.includes("text"),
+      audio: raw.modalities.input.includes("audio"),
+      image: raw.modalities.input.includes("image"),
+      video: raw.modalities.input.includes("video"),
+      pdf: raw.modalities.input.includes("pdf"),
+    }
+  }
+  if (raw.modalities?.output) {
+    next.capabilities.output = {
+      text: raw.modalities.output.includes("text"),
+      audio: raw.modalities.output.includes("audio"),
+      image: raw.modalities.output.includes("image"),
+      video: raw.modalities.output.includes("video"),
+      pdf: raw.modalities.output.includes("pdf"),
+    }
+  }
+  if (raw.limit) {
+    next.limit = {
+      context: raw.limit.context ?? base.limit.context,
+      input: raw.limit.input ?? base.limit.input,
+      output: raw.limit.output ?? base.limit.output,
+    }
+  }
+  if (raw.cost) {
+    next.cost = {
+      input: raw.cost.input ?? base.cost.input,
+      output: raw.cost.output ?? base.cost.output,
+      cache: {
+        read: raw.cost.cache_read ?? base.cost.cache.read,
+        write: raw.cost.cache_write ?? base.cost.cache.write,
+      },
+    }
+  }
+  if (raw.options) next.options = mergeDeep(base.options, raw.options) as Record<string, any>
+  if (raw.headers) next.headers = mergeDeep(base.headers, raw.headers) as Record<string, string>
+  if (raw.id !== undefined) next.api.id = raw.id
+  if (raw.provider?.npm) next.api.npm = raw.provider.npm
+  if (raw.provider?.api) next.api.url = raw.provider.api
+  return next
+}
+
 export function fromModelsDevProvider(provider: ModelsDev.Provider): Info {
   const models: Record<string, Model> = {}
   for (const [key, model] of Object.entries(provider.models)) {
@@ -1372,11 +1431,15 @@ const layer: Layer.Layer<
         for (const [providerIDStr, loader] of Object.entries(discoveryLoaders)) {
           const providerID = ProviderID.make(providerIDStr)
           if (!providers[providerID] || !isProviderAllowed(providerID)) continue
+          const rawCfg = (cfg.provider?.[providerIDStr]?.models ?? {}) as Record<string, any>
           yield* Effect.promise(async () => {
             try {
               const discovered = await loader()
               for (const [modelID, model] of Object.entries(discovered)) {
-                if (!providers[providerID].models[modelID]) {
+                const override = rawCfg[modelID]
+                if (override) {
+                  providers[providerID].models[modelID] = applyConfigOverrides(model, override)
+                } else if (!providers[providerID].models[modelID]) {
                   providers[providerID].models[modelID] = model
                 }
               }
